@@ -51,7 +51,7 @@
         <artifactId>javafx-maven-plugin</artifactId>
         <version>0.0.8</version>
         <configuration>
-          <mainClass>com.rmit.carehome.AppFX</mainClass>
+          <mainClass>assignment2.carehome.service.AppFX</mainClass>
         </configuration>
       </plugin>
       <plugin>
