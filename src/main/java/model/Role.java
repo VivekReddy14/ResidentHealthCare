@@ -1,0 +1,1 @@
+package model; public enum Role { MANAGER, DOCTOR, NURSE }

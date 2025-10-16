@@ -1,4 +1,4 @@
-package assignment2.carehome.service;
+package service;
 
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.HashMap;

@@ -1,152 +1,117 @@
 package assignment2.carehome;
 
-import assignment2.carehome.exception.*;
-import assignment2.carehome.model.*;
-import assignment2.carehome.service.CareHomeService;
+import exception.*;
+import model.*;
+import service.CareHomeService;
+
 import org.junit.jupiter.api.*;
 
 import java.time.*;
-import java.time.temporal.ChronoUnit;
-import java.util.List;
+import java.util.Collection;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 public class CareHomeServiceTest {
 
-    CareHomeService svc;
-    Manager manager;
-    Doctor doctor;
-    Nurse nurse;
+    private CareHomeService svc;
 
     @BeforeEach
-    void setup(){
-        svc = new CareHomeService(List.of(new Bed("B1"), new Bed("B2"), new Bed("B3")));
-        manager = new Manager("M1","Mgr","pw");
-        doctor = new Doctor("D1","Doc","pw");
-        nurse = new Nurse("N1","Nurse","pw");
-
-        svc.addStaff(manager, doctor);
-        svc.addStaff(manager, nurse);
-
-        DayOfWeek today = LocalDate.now().getDayOfWeek();
-        LocalTime now = LocalTime.now().truncatedTo(ChronoUnit.MINUTES);
-
-        // Nurse shift: 1 hour before to 1 hour after now
-        svc.setShift(manager, "N1", today, new Shift(now.minusHours(1), now.plusHours(1)));
-
-        // Doctor shift: now to 1 hour later
-        svc.setShift(manager, "D1", today, new Shift(now, now.plusHours(1)));
+    void setup() {
+        svc = CareHomeService.get();
+        svc.clearAllData();  // ensures fresh state for each test
     }
 
     @Test
-    void addResidentToVacantBed_ok(){
-        var r = new Resident("R1","Pat", Gender.F);
-        svc.addResidentToVacantBed(manager, r, "B1");
-        assertEquals("R1", svc.checkResidentInBed(nurse, "B1").getId());
+    void testLoginValidCredentials() throws AuthorizationException {
+        Staff s = svc.login("manager", "password");
+        assertNotNull(s);
+        assertEquals(Role.MANAGER, s.getRole());
     }
 
     @Test
-    void addResidentToOccupiedBed_throws(){
-        var r1 = new Resident("R1","A", Gender.M);
-        var r2 = new Resident("R2","B", Gender.F);
-        svc.addResidentToVacantBed(manager, r1, "B1");
-        assertThrows(BedOccupiedException.class, () -> svc.addResidentToVacantBed(manager, r2, "B1"));
+    void testLoginInvalidCredentialsThrows() {
+        assertThrows(AuthorizationException.class, () -> svc.login("wrong", "pass"));
     }
 
     @Test
-    void modifyStaffPassword_ok(){
-        assertDoesNotThrow(() -> svc.modifyStaffPassword(manager, "N1", "newpw"));
-    }
+    void testAddResidentAndAllocateBed() throws Exception {
+        // Login as manager to perform admin actions
+        svc.login("manager", "password");
 
-//    This testcase gives error while compiling as modifyStaffPassord only take manager, so commenting it 
-//    @Test
-//    void modifyStaffPassword_unauthorized_throws(){
-//        assertThrows(AuthorizationException.class, () -> svc.modifyStaffPassword(doctor, "N1", "pw"));
-//    }
+        Resident r = svc.addResident("Alice", Gender.FEMALE, false);
+        svc.allocateResidentToBed(r.getId());
 
-    @Test
-    void doctorAddsPrescription_onlyDoctorAndRostered(){
-        var r = new Resident("R2","Casey", Gender.M);
-        svc.addResidentToVacantBed(manager, r, "B2");
-        var p = new Prescription("P1", "R2", "D1");
+        boolean found = svc.getWards().stream()
+                .flatMap(w -> w.getBeds().stream())
+                .anyMatch(b -> b.getResident() != null && b.getResident().getId().equals(r.getId()));
 
-        // doctor can add prescription
-        assertDoesNotThrow(() -> svc.doctorAddPrescription(doctor, "R2", p));
-
-        // nurse cannot add prescription
-        assertThrows(AuthorizationException.class, () -> svc.doctorAddPrescription(nurse, "R2", p));
-
-        // doctor not rostered
-        doctor.clearRoster();
-        assertThrows(NotRosteredException.class, () -> svc.doctorAddPrescription(doctor, "R2", p));
+        assertTrue(found, "Resident should be allocated to a bed");
     }
 
     @Test
-    void nurseMovesResident_onlyNurseAndRostered(){
-        var r = new Resident("R3","Lee", Gender.F);
-        svc.addResidentToVacantBed(manager, r, "B1");
+    void testAddResidentIsolationAllocation() throws Exception {
+        svc.login("manager", "password");
 
-        assertDoesNotThrow(() -> svc.moveResident(nurse, "B1", "B2"));
-        assertThrows(AuthorizationException.class, () -> svc.moveResident(doctor, "B2", "B1"));
+        Resident r = svc.addResident("Bob", Gender.MALE, true);
+        svc.allocateResidentToBed(r.getId());
 
-        // Not rostered nurse
-        nurse.clearRoster();
-        assertThrows(NotRosteredException.class, () -> svc.moveResident(nurse, "B2", "B1"));
+        Bed allocated = svc.getWards().stream()
+                .flatMap(w -> w.getBeds().stream())
+                .filter(b -> b.getResident() != null && b.getResident().getId().equals(r.getId()))
+                .findFirst().orElseThrow();
+
+        assertTrue(allocated.getId().contains("B1") || allocated.getId().contains("B2"),
+                "Isolation patient should be allocated to a single or 2-bed room");
     }
 
     @Test
-    void administer_logsAndRequiresRoster(){
-        var r = new Resident("R4","Jo", Gender.F);
-        svc.addResidentToVacantBed(manager, r, "B1");
-        var p = new Prescription("P2", "R4", "D1");
-        svc.doctorAddPrescription(doctor, "R4", p);
+    void testClearAllDataResetsResidentsAndKeepsDefaultLogins() throws Exception {
+        svc.login("manager", "password");
 
-        // Rostered nurse can administer
-        assertDoesNotThrow(() -> svc.administer(nurse, "R4", "P2", "Amox", 500, "mg"));
+        svc.addResident("Chris", Gender.MALE, false);
+        svc.clearAllData();
 
-        // Not rostered nurse throws
-        nurse.clearRoster();
-        assertThrows(NotRosteredException.class, () -> svc.administer(nurse, "R4", "P2", "Amox", 500, "mg"));
+        Collection<Resident> residents = svc.getResidents();
+        assertEquals(0, residents.size(), "Residents should be cleared");
+
+        Staff m = svc.login("manager", "password");
+        assertNotNull(m);
+        assertEquals(Role.MANAGER, m.getRole());
     }
 
     @Test
-    void auditLogRecordsActions(){
-        var r = new Resident("R5","Alex", Gender.M);
-        svc.addResidentToVacantBed(manager, r, "B3");
+    void testShiftComplianceForNurses() throws Exception {
+        svc.login("manager", "password");
 
-        var p = new Prescription("P3","R5","D1");
-        svc.doctorAddPrescription(doctor,"R5",p);
+        // Create a nurse and assign over 8 hours in one day
+        Nurse n = svc.createNurse("testnurse", "pw");
+        Shift longShift = new Shift(DayOfWeek.MONDAY, LocalTime.of(0, 0), LocalTime.of(10, 0));
+        svc.assignShift(n.getId(), longShift);
 
-        svc.administer(nurse,"R5","P3","Paracetamol",500,"mg");
+        assertThrows(ComplianceException.class, svc::checkCompliance);
+    }
 
-        var entries = svc.getAuditLog().entries();
-        assertTrue(entries.stream().anyMatch(e -> e.action().equals("ADD_RESIDENT_TO_BED")));
-        assertTrue(entries.stream().anyMatch(e -> e.action().equals("ADD_PRESCRIPTION")));
-        assertTrue(entries.stream().anyMatch(e -> e.action().equals("UPDATE_ADMINISTRATION")));
+
+    @Test
+    void testUpdateStaffPassword() throws Exception {
+        svc.login("manager", "password");
+
+        Staff nurse = svc.createNurse("newnurse", "1234");
+        svc.updateStaffPassword(nurse.getId(), "abcd");
+
+        Staff logged = svc.login("newnurse", "abcd");
+        assertNotNull(logged);
+        assertEquals(nurse.getId(), logged.getId());
     }
 
     @Test
-    void setShift_overLimit_throws(){
-        DayOfWeek today = LocalDate.now().getDayOfWeek();
-        // nurse > 8 hours
-        assertThrows(ShiftViolationException.class,
-                () -> svc.setShift(manager, "N1", today, new Shift(LocalTime.of(0,0), LocalTime.of(12,0))));
-        // doctor > 1 hour
-        assertThrows(ShiftViolationException.class,
-                () -> svc.setShift(manager, "D1", today, new Shift(LocalTime.of(0,0), LocalTime.of(3,0))));
-    }
+    void testDischargeRemovesResident() throws Exception {
+        svc.login("manager", "password");
 
-    @Test
-    void checkResidentInEmptyBed_throws(){
-        assertThrows(NotFoundException.class, () -> svc.checkResidentInBed(nurse, "B1"));
-    }
+        Resident r = svc.addResident("Eve", Gender.FEMALE, false);
+        svc.allocateResidentToBed(r.getId());
 
-    @Test
-    void unauthorizedActions_throwAuthorization(){
-        var r = new Resident("R6","Sam",Gender.F);
-        svc.addResidentToVacantBed(manager,r,"B3");
-
-        Staff fake = new Nurse("X1","Fake","pw");
-        assertThrows(AuthorizationException.class, () -> svc.checkResidentInBed(fake,"B3"));
+        svc.discharge(r.getId());
+        assertFalse(svc.getResidents().contains(r));
     }
 }

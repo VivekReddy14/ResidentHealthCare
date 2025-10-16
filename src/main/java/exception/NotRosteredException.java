@@ -1,0 +1,1 @@
+package exception; public class NotRosteredException extends Exception { public NotRosteredException(String m){super(m);} }

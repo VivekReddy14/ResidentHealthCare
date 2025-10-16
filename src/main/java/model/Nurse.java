@@ -1,0 +1,1 @@
+package model; public class Nurse extends Staff { public Nurse(String id,String u,String p){ super(id,u,p,Role.NURSE);} }
