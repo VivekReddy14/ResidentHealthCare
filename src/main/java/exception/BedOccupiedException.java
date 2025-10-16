@@ -1,0 +1,1 @@
+package exception; public class BedOccupiedException extends Exception { public BedOccupiedException(String m){super(m);} }

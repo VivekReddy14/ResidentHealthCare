@@ -1,0 +1,1 @@
+package exception; public class ComplianceException extends Exception { public ComplianceException(String m){super(m);} }

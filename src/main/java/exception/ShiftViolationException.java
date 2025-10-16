@@ -1,0 +1,1 @@
+package exception; public class ShiftViolationException extends Exception { public ShiftViolationException(String m){super(m);} }
